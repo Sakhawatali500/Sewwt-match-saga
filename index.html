@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sweet Match Saga - Styled</title>
+
+  <!-- Stylish Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Luckiest Guy', cursive;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: linear-gradient(to bottom, #fce4ec, #f8bbd0);
+      overflow: hidden;
+      position: relative;
+    }
+
+    h1 {
+      font-size: 48px;
+      color: #ff4081;
+      text-shadow: 2px 2px #880e4f;
+      margin: 16px 0 8px;
+    }
+
+    #levelDisplay, #score, #moves, #target {
+      font-size: 20px;
+      color: #ffffff;
+      text-shadow: 1px 1px 2px #000;
+      margin: 2px;
+      background: rgba(255, 64, 129, 0.6);
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+
+    #progressContainer {
+      width: 80%;
+      height: 20px;
+      background: #f1f1f1;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 8px;
+      box-shadow: inset 0 0 5px #aaa;
+    }
+
+    #progressBar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #ec407a, #ff8a65);
+      transition: width 0.3s ease;
+    }
+
+    #gameBoard {
+      display: grid;
+      grid-template-columns: repeat(8, 40px);
+      grid-template-rows: repeat(8, 40px);
+      gap: 2px;
+      margin: 10px;
+    }
+
+    .tile {
+      width: 40px;
+      height: 40px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 24px;
+      text-align: center;
+      line-height: 40px;
+      user-select: none;
+      cursor: pointer;
+      animation: idleBounce 1.5s infinite ease-in-out;
+    }
+
+    @keyframes idleBounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+
+    .comboText {
+      position: absolute;
+      font-size: 32px;
+      font-weight: bold;
+      color: #ff4081;
+      animation: comboPop 1s ease-out forwards;
+      pointer-events: none;
+      text-shadow: 2px 2px 0 #fff;
+    }
+
+    @keyframes comboPop {
+      0% { opacity: 0; transform: scale(0.5) translateY(0); }
+      50% { opacity: 1; transform: scale(1.2) translateY(-20px); }
+      100% { opacity: 0; transform: scale(1) translateY(-40px); }
+    }
+
+    #flash {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: white;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 99;
+    }
+
+    #levelUpOverlay, #gameOverOverlay {
+      position: absolute;
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 40px;
+      font-weight: bold;
+      color: #fff;
+      background: #ec407a;
+      padding: 16px 32px;
+      border-radius: 16px;
+      box-shadow: 0 0 20px #00000080;
+      display: none;
+      z-index: 10;
+      text-shadow: 2px 2px #880e4f;
+    }
+
+    #levelUpOverlay.active, #gameOverOverlay.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sweet Match Saga</h1>
+  <div id="levelDisplay">Level: 1</div>
+  <div id="score">Score: 0</div>
+  <div id="target">Target Score: 150</div>
+  <div id="moves">Moves Left: 15</div>
+  <div id="progressContainer"><div id="progressBar"></div></div>
+  <div id="gameBoard"></div>
+  <div id="levelUpOverlay">LEVEL UP!</div>
+  <div id="gameOverOverlay">TRY AGAIN!</div>
+  <div id="flash"></div>
+
+  <!-- Local Sounds -->
+  <audio id="swapSound" src="sounds/swap.mp3"></audio>
+  <audio id="matchSound" src="sounds/match.mp3"></audio>
+  <audio id="comboSound" src="sounds/combo.mp3"></audio>
+  <audio id="dropSound" src="sounds/drop.mp3"></audio>
+  <audio id="levelUpSound" src="sounds/levelup.mp3"></audio>
+  <audio id="gameOverSound" src="sounds/fail.mp3"></audio>
+
+  <script>
+    const boardSize = 8;
+    const sweets = ['🍒','🍇','🍋','🍊','🍎','🍉'];
+    const gameBoard = document.getElementById("gameBoard");
+    const scoreDisplay = document.getElementById("score");
+    const levelDisplay = document.getElementById("levelDisplay");
+    const movesDisplay = document.getElementById("moves");
+    const targetDisplay = document.getElementById("target");
+    const progressBar = document.getElementById("progressBar");
+    const flash = document.getElementById("flash");
+
+    const levelUpOverlay = document.getElementById("levelUpOverlay");
+    const gameOverOverlay = document.getElementById("gameOverOverlay");
+
+    const swapSound = document.getElementById("swapSound");
+    const matchSound = document.getElementById("matchSound");
+    const comboSound = document.getElementById("comboSound");
+    const dropSound = document.getElementById("dropSound");
+    const levelUpSound = document.getElementById("levelUpSound");
+    const gameOverSound = document.getElementById("gameOverSound");
+
+    let board = [], score = 0, level = 1, movesLeft = 0, dragStart = null, touchStart = null;
+
+    function getMovesForLevel(lvl) {
+      return 10 + lvl * 5;
+    }
+
+    function getTargetScore(lvl) {
+      return lvl * 200;
+    }
+
+    function updateDisplays() {
+      levelDisplay.textContent = `Level: ${level}`;
+      scoreDisplay.textContent = `Score: ${score}`;
+      movesDisplay.textContent = `Moves Left: ${movesLeft}`;
+      targetDisplay.textContent = `Target Score: ${getTargetScore(level)}`;
+      const progress = Math.min(score / getTargetScore(level), 1) * 100;
+      progressBar.style.width = `${progress}%`;
+    }
+
+    function flashScreen() {
+      flash.style.opacity = 1;
+      flash.style.transition = "opacity 0.3s";
+      setTimeout(() => flash.style.opacity = 0, 300);
+    }
+
+    function createTile(row, col) {
+      const tile = document.createElement("div");
+      tile.classList.add("tile");
+      tile.dataset.row = row;
+      tile.dataset.col = col;
+      tile.textContent = sweets[Math.floor(Math.random() * sweets.length)];
+
+      tile.addEventListener("touchstart", () => touchStart = tile);
+      tile.addEventListener("touchend", (e) => {
+        const target = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+        if (target && target.classList.contains("tile") && areAdjacent(touchStart, target)) {
+          swapTiles(touchStart, target);
+        }
+        touchStart = null;
+      });
+
+      tile.addEventListener("dragstart", (e) => dragStart = tile);
+      tile.addEventListener("dragover", (e) => e.preventDefault());
+      tile.addEventListener("drop", (e) => {
+        if (areAdjacent(dragStart, tile)) {
+          swapTiles(dragStart, tile);
+        }
+        dragStart = null;
+      });
+
+      return tile;
+    }
+
+    function areAdjacent(t1, t2) {
+      const r1 = parseInt(t1.dataset.row), c1 = parseInt(t1.dataset.col);
+      const r2 = parseInt(t2.dataset.row), c2 = parseInt(t2.dataset.col);
+      return (Math.abs(r1 - r2) + Math.abs(c1 - c2)) === 1;
+    }
+
+    function initBoard() {
+      gameBoard.innerHTML = "";
+      board = [];
+      movesLeft = getMovesForLevel(level);
+      updateDisplays();
+
+      for (let row = 0; row < boardSize; row++) {
+        board[row] = [];
+        for (let col = 0; col < boardSize; col++) {
+          const tile = createTile(row, col);
+          board[row][col] = tile;
+          gameBoard.appendChild(tile);
+        }
+      }
+
+      checkMatches();
+    }
+
+    function swapTiles(t1, t2) {
+      const temp1 = t1.textContent;
+      const temp2 = t2.textContent;
+      t1.textContent = temp2;
+      t2.textContent = temp1;
+
+      swapSound.play();
+      movesLeft--;
+      updateDisplays();
+
+      setTimeout(() => {
+        const matched = checkMatches();
+
+        if (!matched) {
+          t1.textContent = temp1;
+          t2.textContent = temp1;
+        }
+
+        checkGameEnd();
+      }, 200);
+    }
+
+    function showComboText(msg, tile) {
+      const rect = tile.getBoundingClientRect();
+      const div = document.createElement("div");
+      div.className = "comboText";
+      div.textContent = msg;
+      div.style.left = `${rect.left + rect.width / 2 - 50}px`;
+      div.style.top = `${rect.top + window.scrollY - 20}px`;
+      document.body.appendChild(div);
+      setTimeout(() => div.remove(), 1000);
+    }
+
+    function checkMatches() {
+      let matched = new Set();
+
+      for (let row = 0; row < boardSize; row++) {
+        for (let col = 0; col < boardSize - 2; col++) {
+          const a = board[row][col], b = board[row][col + 1], c = board[row][col + 2];
+          if (a.textContent === b.textContent && b.textContent === c.textContent) {
+            matched.add(a); matched.add(b); matched.add(c);
+            if (matched.size >= 4) {
+              showComboText("Sweet!", a);
+              comboSound.play();
+              flashScreen();
+            }
+          }
+        }
+      }
+
+      for (let col = 0; col < boardSize; col++) {
+        for (let row = 0; row < boardSize - 2; row++) {
+          const a = board[row][col], b = board[row + 1][col], c = board[row + 2][col];
+          if (a.textContent === b.textContent && b.textContent === c.textContent) {
+            matched.add(a); matched.add(b); matched.add(c);
+            if (matched.size >= 4) {
+              showComboText("Delicious!", a);
+              comboSound.play();
+              flashScreen();
+            }
+          }
+        }
+      }
+
+      if (matched.size > 0) {
+        matchSound.play();
+
+        matched.forEach(tile => {
+          tile.textContent = sweets[Math.floor(Math.random() * sweets.length)];
+          score += 10;
+          dropSound.play();
+        });
+
+        updateDisplays();
+
+        if (score >= getTargetScore(level) && movesLeft > 0) {
+          level++;
+          levelUpSound.play();
+          showLevelUp();
+          setTimeout(initBoard, 1000);
+        } else {
+          setTimeout(checkMatches, 400);
+        }
+
+        return true;
+      }
+
+      return false;
+    }
+
+    function checkGameEnd() {
+      if (movesLeft <= 0 && score < getTargetScore(level)) {
+        gameOverSound.play();
+        flashScreen();
+        gameOverOverlay.classList.add("active");
+        setTimeout(() => {
+          gameOverOverlay.classList.remove("active");
+          score = 0;
+          initBoard();
+        }, 2000);
+      }
+    }
+
+    function showLevelUp() {
+      levelUpOverlay.classList.add("active");
+      setTimeout(() => levelUpOverlay.classList.remove("active"), 1000);
+    }
+
+    initBoard();
+  </script>
+</body>
+</html>
